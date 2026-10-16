@@ -95,7 +95,7 @@ const menu=[
 patch("src/ui/handlers/menu-ui-handler.ts",[
  ['import { Button } from "#enums/buttons";','import { Button } from "#enums/buttons";\nimport { cycleDebugOption, getDebugOption, type DebugOptionKey } from "#system/offline/debug-options";'],
  ['enum MenuOptions {\n  GAME_SETTINGS,','enum MenuOptions {\n  DEBUG_OPTIONS,\n  GAME_SETTINGS,'],
- [label,relabel],
+ ['    const options: OptionSelectItem[] = validOptions.map((option: MenuOptions) => {\n', '    const options: OptionSelectItem[] = validOptions.map((option: MenuOptions) => {\n      if (option === MenuOptions.DEBUG_OPTIONS) return { label: "Debug Options", handler: () => this.optionSelected(option), keepOpen: true };\n'],
  ['  private optionSelected(option: MenuOptions): boolean {',menu],
  ['    switch (option) {\n      case MenuOptions.GAME_SETTINGS:',
  '    switch (option) {\n      case MenuOptions.DEBUG_OPTIONS:\n        ui.setOverlayMode(UiMode.MENU_OPTION_SELECT, this.getDebugOptionsConfig());\n        success = true;\n        break;\n      case MenuOptions.GAME_SETTINGS:']
