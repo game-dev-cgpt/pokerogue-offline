@@ -77,7 +77,7 @@ jobs:
       - name: Verify package name and build APK
         working-directory: pokerogue-src/android
         run: |
-          grep -F 'package io.pokerogue.debugmod;' app/src/main/java/io/pokerogue/catchmod/MainActivity.java
+          grep -F 'package io.pokerogue.debugmod;' app/src/main/java/io/pokerogue/debugmod/MainActivity.java
           chmod +x gradlew
           ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
