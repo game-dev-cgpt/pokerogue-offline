@@ -1,0 +1,87 @@
+name: Build PokeRogue Debug Mod APK
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/build-debug-standalone.yml", "patches/debug-mod/**", "new-files/src/system/offline/debug-options.ts"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm install -g pnpm
+      - run: git clone --recurse-submodules --depth 1 --branch main https://github.com/pagefaultgames/pokerogue.git pokerogue-src
+      - run: |
+          bash scripts/apply-patches.sh android
+          node patches/debug-mod/node/debug-options.js
+      - name: Mark custom offline build
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          sed -i "s/BUILD_NUMBER_PLACEHOLDER/${BUILD_NUMBER} DEV/g" pokerogue-src/src/ui/handlers/title-ui-handler.ts
+          sed -i 's/DROPBOX_APP_KEY_PLACEHOLDER//g' pokerogue-src/src/system/offline/dropbox-backup.ts
+          sed -i 's#DROPBOX_REDIRECT_URI_PLACEHOLDER#io.pokerogue.debugmod://dropbox-auth-callback#g' pokerogue-src/src/system/offline/dropbox-backup.ts
+      - name: Install dependencies and configure standalone app
+        working-directory: pokerogue-src
+        run: |
+          pnpm install
+          pnpm add @capacitor/core@8.4.1 @capacitor/cli@8.4.1 @capacitor/android@8.4.1 @capacitor/filesystem@8.1.2 @capacitor/share@8.0.1 @capacitor/status-bar@8.0.2 @capacitor/app@8.1.1 @capacitor/browser@8.0.4 @capgo/capacitor-social-login@8.3.33
+          cp "$GITHUB_WORKSPACE/configs/android/capacitor/capacitor.config.json" capacitor.config.json
+          node -e 'const fs=require("fs");const p="capacitor.config.json";const x=JSON.parse(fs.readFileSync(p));x.appId="io.pokerogue.debugmod";x.appName="PokéRogue Debug Mod";if(x.plugins?.SocialLogin?.providers)x.plugins.SocialLogin.providers.google=false;fs.writeFileSync(p,JSON.stringify(x,null,2)+"\n")'
+      - name: Build game
+        working-directory: pokerogue-src
+        env:
+          VITE_BYPASS_LOGIN: "1"
+        run: pnpm build --mode app
+      - run: bash scripts/apply-post-build-patches.sh android
+      - name: Generate standalone Android application
+        working-directory: pokerogue-src
+        run: |
+          npx cap add android
+          npx cap sync android
+          ACTIVITY=$(find android/app/src/main/java -name MainActivity.java | head -n 1)
+          test -n "$ACTIVITY"
+          cp "$GITHUB_WORKSPACE/configs/android/java/MainActivity.java" "$ACTIVITY"
+          sed -i 's/^package xyz.scooom.pkr;/package io.pokerogue.debugmod;/' "$ACTIVITY"
+          node "$GITHUB_WORKSPACE/patches/android/node/android-manifest-keyboard-fix.js"
+          node "$GITHUB_WORKSPACE/patches/android/node/android-manifest-url-scheme.js"
+          node "$GITHUB_WORKSPACE/patches/android/node/android-manifest-storage-permissions.js"
+      - name: Set separate launcher icon
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y imagemagick
+          RES_DIR="$GITHUB_WORKSPACE/pokerogue-src/android/app/src/main/res"
+          for SPEC in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            DENSITY=${SPEC%%:*}
+            SIZE=${SPEC#*:}
+            convert docs/appIcon-dev.png -resize "${SIZE}x${SIZE}" "$RES_DIR/mipmap-${DENSITY}/ic_launcher.png"
+            cp "$RES_DIR/mipmap-${DENSITY}/ic_launcher.png" "$RES_DIR/mipmap-${DENSITY}/ic_launcher_round.png"
+          done
+          for SPEC in mdpi:72 hdpi:108 xhdpi:144 xxhdpi:216 xxxhdpi:288; do
+            DENSITY=${SPEC%%:*}
+            SIZE=${SPEC#*:}
+            convert docs/appIcon-adaptive.png -resize "${SIZE}x${SIZE}" "$RES_DIR/mipmap-${DENSITY}/ic_launcher_foreground.png"
+          done
+          cp configs/android/res/mipmap-anydpi-v26/ic_launcher.xml "$RES_DIR/mipmap-anydpi-v26/ic_launcher.xml"
+          cp configs/android/res/mipmap-anydpi-v26/ic_launcher_round.xml "$RES_DIR/mipmap-anydpi-v26/ic_launcher_round.xml"
+      - name: Verify package name and build APK
+        working-directory: pokerogue-src/android
+        run: |
+          grep -F 'package io.pokerogue.debugmod;' app/src/main/java/io/pokerogue/catchmod/MainActivity.java
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PokeRogue-DebugMod-APK
+          path: pokerogue-src/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
